@@ -1,17 +1,30 @@
 CC=g++
 CFLAGS=-Wall
 LDFLAGS=
-BUILD_DIR=build/test
-SOURCES=main.cpp
-EXECUTABLE=hello
+BUILD_DIR=build
+CLIENT_SRC=client.cpp
+SERVER_SRC=server.cpp
+CLIENT_EXE=client
+SERVER_EXE=server
+CLIENT_ARGS=
+SERVER_ARGS=
 
-all: $(EXECUTABLE)
+all: clean $(SERVER_EXE) $(CLIENT_EXE) 
 	
-$(EXECUTABLE): mkbuilddir
-	$(CC) $(CFLAGS) $(LDFLAGS) $(SOURCES) -o $(BUILD_DIR)/$@
+$(CLIENT_EXE): mkbuilddir
+	$(CC) $(CFLAGS) $(LDFLAGS) $(CLIENT_SRC) -o $(BUILD_DIR)/$@
+
+$(SERVER_EXE): mkbuilddir
+	$(CC) $(CFLAGS) $(LDFLAGS) $(SERVER_SRC) -o $(BUILD_DIR)/$@
 
 mkbuilddir:
 	mkdir -p $(BUILD_DIR)
 
-run:
-	$(BUILD_DIR)/$(EXECUTABLE) www.google.com
+runclient:
+	$(BUILD_DIR)/$(CLIENT_EXE) $(CLIENT_ARGS)
+	
+runserver:
+	$(BUILD_DIR)/$(SERVER_EXE) $(SERVER_ARGS)
+
+clean:
+	rm -rf build/
