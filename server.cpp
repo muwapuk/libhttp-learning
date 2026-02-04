@@ -2,6 +2,7 @@
 #include <arpa/inet.h>
 #include <iostream>
 #include <netdb.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <string.h>
 
@@ -52,8 +53,21 @@ int main(int argc, char *argv[])
 
     their_addr_size = sizeof(their_addr);
     client_sock = accept(listen_sock, (sockaddr*)&their_addr, &their_addr_size);
-
-    std::cout << "Connection accepted: " << client_sock << std::endl; 
+////
+    char hoststr[NI_MAXHOST];
+    char servstr[NI_MAXSERV];
+    err = getnameinfo((sockaddr *)&their_addr,
+		      their_addr_size,
+		      hoststr,
+		      sizeof(hoststr),
+		      servstr,
+		      sizeof(servstr),
+		      NI_NUMERICHOST | NI_NUMERICSERV);
+/////
+    std::cout << "Connection accepted: "
+	      << "Socket descriptor " << client_sock << " - "
+	      << hoststr << ':' << servstr
+	      << std::endl; 
 
     return 0;
 }
