@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <string.h>
+#include <unistd.h>
 
 int main(int argc, char *argv[])
 {
@@ -52,22 +53,39 @@ int main(int argc, char *argv[])
     }
 
     their_addr_size = sizeof(their_addr);
-    client_sock = accept(listen_sock, (sockaddr*)&their_addr, &their_addr_size);
-////
     char hoststr[NI_MAXHOST];
     char servstr[NI_MAXSERV];
-    err = getnameinfo((sockaddr *)&their_addr,
-		      their_addr_size,
-		      hoststr,
-		      sizeof(hoststr),
-		      servstr,
-		      sizeof(servstr),
-		      NI_NUMERICHOST | NI_NUMERICSERV);
-/////
-    std::cout << "Connection accepted: "
-	      << "Socket descriptor " << client_sock << " - "
-	      << hoststr << ':' << servstr
-	      << std::endl; 
+
+    while(client_sock = accept(listen_sock, (sockaddr*)&their_addr, &their_addr_size)) {
+////
+        err = getnameinfo((sockaddr *)&their_addr,
+    		      their_addr_size,
+    		      hoststr,
+    		      sizeof(hoststr),
+    		      servstr,
+    		      sizeof(servstr),
+    		      NI_NUMERICHOST | NI_NUMERICSERV);
+    /////
+        std::cout << "Connection accepted: "
+    	      << "Socket descriptor " << client_sock << " - "
+    	      << hoststr << ':' << servstr
+    	      << std::endl; 
+	char send_buf[256];
+	char recv_buf[256];
+	snprintf(send_buf, 256, "Your socket descriptor is %d\n", client_sock);
+
+	int bytes_send = send(client_sock, send_buf, 256, 0);
+
+	shutdown(client_sock, SHUT_WR);
+	
+	recv(client_sock, recv_buf, sizeof(char)*256, 0);
+
+	shutdown(client_sock, SHUT_RD);
+
+	std::cout << "From client: " << recv_buf << std::endl;
+
+	close(client_sock);
+    }
 
     return 0;
 }

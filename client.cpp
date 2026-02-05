@@ -4,6 +4,7 @@
 #include <netdb.h>
 #include <sys/socket.h>
 #include <string.h>
+#include <unistd.h>
 
 int main(int argc, char *argv[])
 {
@@ -33,6 +34,20 @@ int main(int argc, char *argv[])
 	exit(1);
     }
 
+    char buf[256];
+    recv(sockfd, buf, sizeof(char)*256, 0);
+
+    shutdown(sockfd, SHUT_RD);
+
+    std::cout << "From server: " << buf << std::endl;
+
+    char send_buf[256];
+    snprintf(send_buf, 256, "Message received");
+    send(sockfd, send_buf, 256, 0); 
+
+    shutdown(sockfd, SHUT_WR);
+
+    close(sockfd);
 
     return 0;
 }
