@@ -6,7 +6,7 @@ CLIENT_SRC=client.cpp
 SERVER_SRC=server.cpp
 CLIENT_EXE=client
 SERVER_EXE=server
-CLIENT_ARGS=
+CLIENT_ARGS= 127.0.0.1
 SERVER_ARGS=
 
 all: clean $(SERVER_EXE) $(CLIENT_EXE) 
