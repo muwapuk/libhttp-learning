@@ -3,10 +3,10 @@ CFLAGS=-Wall
 LDFLAGS=
 BUILD_DIR=build
 CLIENT_SRC=client.cpp
-SERVER_SRC=server.cpp
+SERVER_SRC=main.cpp server.cpp
 CLIENT_EXE=client
 SERVER_EXE=server
-CLIENT_ARGS= 127.0.0.1
+CLIENT_ARGS= 192.168.0.254 
 SERVER_ARGS=
 
 all: clean $(SERVER_EXE) $(CLIENT_EXE) 
