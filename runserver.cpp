@@ -2,9 +2,9 @@
 
 int main(int argc, char **argv)
 {
-	Server srv;
+	libhttp::Server srv;
 
-	srv.listen("192.168.0.254", 3490);
+	srv.listen("127.0.0.1", 25566);
 
 	return 0;	
 }

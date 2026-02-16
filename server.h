@@ -1,6 +1,8 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+#include "networkfuncs.h"
+
 #include <iostream>
 #include <cstring>
 #include <arpa/inet.h>
@@ -12,13 +14,8 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
-
-//namespace libhttp {
-	
-void *get_in_addr(sockaddr *sa);
-
-std::string get_ip_string(const sockaddr *sa);
-
+namespace libhttp 
+{
 class Server
 {
     int sockfd;
@@ -35,6 +32,6 @@ public:
     bool listen(const std::string &host, int port);
 };
 
-//}
+}
 
 #endif
