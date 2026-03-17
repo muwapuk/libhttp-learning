@@ -1,6 +1,9 @@
 #include "client.h"
 
+#include <cstring>
 #include <regex>
+#include <sys/socket.h>
+#include <networkfuncs.h>
 
 const char *PORT = "3490";
 const int MAXDATASIZE = 100;
@@ -31,8 +34,8 @@ Client::Client(std::string url)
 		return;
 	}
 	int portNum = std::stoi(port);
-	
-	Client(hostname, portNum); 
+
+    create_client(hostname, portNum);
 }
 Client::Client(std::string host, int port)
 {
@@ -43,7 +46,7 @@ Client::~Client()
 	if(sockfd != -1) 
 		close(sockfd);
 }
-int Client::create_client(std::string host, int port)
+bool Client::create_client(const std::string &host, int port)
 {
 	addrinfo hints;
     memset(&hints, 0, sizeof hints);
@@ -53,13 +56,6 @@ int Client::create_client(std::string host, int port)
     addrinfo *hostinfo;
     if(0 != getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &hostinfo)) {
 		std::cerr << "getaddrinfo() error: " << std::strerror(errno) << std::endl; 
-		return 1;
-    }
-    sockfd = socket(hostinfo->ai_family, hostinfo->ai_socktype, hostinfo->ai_protocol);
-    if(-1 == (sockfd = socket(hostinfo->ai_family,
-							  hostinfo->ai_socktype,
-							  hostinfo->ai_protocol))) {
-		std::cerr << "socket() error: " << std::strerror(errno) << std::endl; 
 		return 1;
     }
     addrinfo *p;
@@ -83,17 +79,25 @@ int Client::create_client(std::string host, int port)
     	}
 		break;
     }
-
     if(p == NULL) {
 		std::cerr << "Failed to connect" << std::endl;
 		sockfd = -1;
-		return 2;
+		return 1;
     }
-    inet_ntop(p->ai_family,
-	      get_in_addr((sockaddr*)&p->ai_addr),
-	      addrstr, sizeof addrstr);
-    std::cout << "Client: connected to " << addrstr << std::endl;
+    std::cout << "Client: connected to " << addrstr << " on socket " << sockfd << std::endl;
 
     freeaddrinfo(hostinfo);
 	return 0;
 }
+std::string Client::recieve()
+{
+	if(sockfd == -1) {
+		std::cerr << "Bad socket! Exiting..." << std::endl;
+		return "";
+	}
+	std::string msg(MAXDATASIZE, 0);
+	int nbytes = recv(sockfd, msg.data(), MAXDATASIZE, 0);
+
+	return msg;
+}
+

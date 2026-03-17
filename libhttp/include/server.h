@@ -10,6 +10,9 @@
 #include <sys/wait.h>
 #include <poll.h>
 #include <vector>
+#include <map>
+
+#include "http.h"
 
 namespace libhttp 
 {
@@ -21,6 +24,8 @@ class Server
     std::string ip;
     std::string hostname;
     int port;
+
+	std::map<std::string, void(*)(int, const Request&)> services;
 
 	int poll_descriptors_count;
 	size_t poll_descriptors_size = 4;
@@ -34,7 +39,10 @@ class Server
 	void handle_new_connection();
 	void handle_client_data(int pollfd_index);
 	void add_to_poll_descriptors(int fd);
+	bool send(int clientsock, const std::string&);
 
+	bool add_service_handler(std::string path, void(*)(int, const Request&));
+	bool handle_request(int clientsock, Request &);
 public:
     bool listen(const std::string &host, int port);
 };

@@ -6,7 +6,9 @@
 #include <arpa/inet.h>
 #include <iostream>
 
+
 void *get_in_addr(sockaddr *sa);
 std::string get_ip_string(const sockaddr *sa);
+bool send(int sodkfd, const std::string&);
 
 #endif

@@ -1,5 +1,6 @@
 #include "server.h"
 
+#include "http.h"
 #include "networkfuncs.h"
 
 #include <iostream>
@@ -126,7 +127,7 @@ void Server::add_to_poll_descriptors(int fd)
 }
 void Server::handle_client_data(int pollfd_index)
 {
-	char buf[256];
+	char buf[999'999];
 	int client_fd = poll_descriptors[pollfd_index].fd; 
 
 	int nbytes = recv(client_fd, buf, sizeof buf, 0); 
@@ -140,6 +141,41 @@ void Server::handle_client_data(int pollfd_index)
 		close(client_fd);
 		poll_descriptors.erase(poll_descriptors.begin() + pollfd_index);
 	} else {
-		std::cout << "Server: recv from fd " << client_fd << ':' << buf << std::endl;	
+		std::cout << "Server: recv message from fd " << client_fd << std::endl;	
+		Request req;
+		if(req.parse_string(buf)) {
+			std::cerr << "Bad request from descriptor: " << client_fd << std::endl;
+		} else {
+			std::cout << req.method << ' ' << req.path << ' ' << req.version << '\n';
+			for(auto header : req.headers) {
+				std::cout << header.first << ": " << header.second << '\n';
+			}
+			std::fflush(stdout);	
+		}
 	}
+}
+bool Server::send(int sockfd, const std::string &str)
+{
+	if(sockfd == -1) {
+		std::cerr << "Bad socket! Exiting..." << std::endl;
+		return 1;
+	}
+	int strsize = str.length();
+	int	nbytes = ::send(sockfd, str.data(), strsize, 0);
+	if(nbytes == -1)
+		std::cerr << "send(): " << std::strerror(errno) << std::endl;
+
+	return 0;
+}
+
+bool Server::add_service_handler(std::string path, void(*handler)(int, const Request&)) {
+	services[path] = handler;	
+	return 0;
+}
+bool Server::handle_request(int clientsock, Request &req) {
+	if(!services.count(req.path)) {
+		return 1;	
+	}
+	services[req.path](clientsock, req);
+	return 0;
 }
