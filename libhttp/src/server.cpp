@@ -127,7 +127,7 @@ void Server::add_to_poll_descriptors(int fd)
 }
 void Server::handle_client_data(int pollfd_index)
 {
-	char buf[999'999];
+	char buf[MAX_DATA_PAYLOAD];
 	int client_fd = poll_descriptors[pollfd_index].fd; 
 
 	int nbytes = recv(client_fd, buf, sizeof buf, 0); 
@@ -141,16 +141,12 @@ void Server::handle_client_data(int pollfd_index)
 		close(client_fd);
 		poll_descriptors.erase(poll_descriptors.begin() + pollfd_index);
 	} else {
-		std::cout << "Server: recv message from fd " << client_fd << std::endl;	
 		Request req;
-		if(req.parse_string(buf)) {
+		std::string bufstr{ buf };
+		if(req.parse_string(bufstr)) {
 			std::cerr << "Bad request from descriptor: " << client_fd << std::endl;
 		} else {
-			std::cout << req.method << ' ' << req.path << ' ' << req.version << '\n';
-			for(auto header : req.headers) {
-				std::cout << header.first << ": " << header.second << '\n';
-			}
-			std::fflush(stdout);	
+			handle_request(client_fd, req);
 		}
 	}
 }
@@ -167,15 +163,24 @@ bool Server::send(int sockfd, const std::string &str)
 
 	return 0;
 }
-
-bool Server::add_service_handler(std::string path, void(*handler)(int, const Request&)) {
-	services[path] = handler;	
-	return 0;
-}
 bool Server::handle_request(int clientsock, Request &req) {
-	if(!services.count(req.path)) {
+	if(!services.contains(req.path)) {
 		return 1;	
 	}
-	services[req.path](clientsock, req);
+	Response resp;
+    auto& handler = services[req.path];
+	handler(req, resp);
+	
+	// -----
+	// SEND RESPONSE MADE BY HANDLER
+    
+
+	// -----
+	
 	return 0;
+}
+
+void Server::Get(std::string path, Handler h)
+{
+	services[path] = h;
 }

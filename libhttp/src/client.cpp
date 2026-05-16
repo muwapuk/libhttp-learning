@@ -100,4 +100,7 @@ std::string Client::recieve()
 
 	return msg;
 }
-
+Response Client::Get(std::string path) 
+{	
+	Request req;
+}

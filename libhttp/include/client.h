@@ -8,6 +8,7 @@
 #include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <http.h>
 
 namespace libhttp
 {
@@ -17,6 +18,8 @@ class Client
     int sockfd;
 
 	bool create_client(const std::string &addr, int port);
+
+	std::string recieve();
 public:
     Client(const std::string addr);
     Client(const std::string addr, int port);
@@ -24,7 +27,7 @@ public:
 	Client& operator=(const Client&) = delete;
 	~Client();
 
-	std::string recieve();
+	Response Get(std::string path);
 };
 }
 
