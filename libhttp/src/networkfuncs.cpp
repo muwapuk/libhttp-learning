@@ -1,11 +1,23 @@
 #include "networkfuncs.h"
 
+#include "logger.h"
+#include <sys/socket.h>
+
 void *get_in_addr(sockaddr *sa)
 {
     if(sa->sa_family == AF_INET) { 
 	return &(((sockaddr_in*)sa)->sin_addr);
     }
     return &(((sockaddr_in6*)sa)->sin6_addr);
+}
+std::string get_ip_string(int sockfd)
+{
+    sockaddr sa;
+    socklen_t len = sizeof(sa);
+    if(0 > getpeername(sockfd, &sa, &len)) 
+        return "UNKNOWN"; 
+    else 
+        return get_ip_string(&sa);
 }
 std::string get_ip_string(const sockaddr *sa)
 {
@@ -20,7 +32,7 @@ std::string get_ip_string(const sockaddr *sa)
 		inet_ntop(AF_INET6, &((sockaddr_in*)sa)->sin_addr, addr_c_str, INET6_ADDRSTRLEN);
 		return addr_c_str;
 	} else {
-		std::cerr << "get_ip_string: Unsupported address family.";
+        logError("Unsupported address family");
 		return "";
 	}
 }

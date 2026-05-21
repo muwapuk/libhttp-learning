@@ -1,5 +1,7 @@
 #include "client.h"
 
+#include "logger.h"
+
 #include <cstring>
 #include <regex>
 #include <sys/socket.h>
@@ -25,12 +27,10 @@ Client::Client(std::string url)
 		hostname = m[2];
 		port = m[3];
 
-		std::cout << "Hostname is: " << hostname << '\n'
-				  << "Port is: " << port << std::endl;
 		if(hostname.empty() || port.empty())
 			return;
 	} else {
-		std::cerr << "Bad URL" << std::endl;
+        logError("Invalid URL");
 		return;
 	}
 	int portNum = std::stoi(port);
@@ -55,7 +55,7 @@ bool Client::create_client(const std::string &host, int port)
 
     addrinfo *hostinfo;
     if(0 != getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &hostinfo)) {
-		std::cerr << "getaddrinfo() error: " << std::strerror(errno) << std::endl; 
+        logDebug(std::string("getaddrinfo() error: ") + std::strerror(errno));
 		return 1;
     }
     addrinfo *p;
@@ -64,27 +64,28 @@ bool Client::create_client(const std::string &host, int port)
 		if(-1 == (sockfd = socket(p->ai_family,
 								  p->ai_socktype,
 								  p->ai_protocol))) {
-    		std::cerr << "socket() error: " << std::strerror(errno) << std::endl; 
+            logDebug(std::string("socket() error: ") + std::strerror(errno));
 		    continue;
 		}
 		inet_ntop(p->ai_family,
 			get_in_addr((sockaddr*)&p->ai_addr),
 			addrstr, sizeof addrstr);
-		std::cout << "Client: attempting connection to " << addrstr << std::endl;
+        logInfo(std::string("Attempting to connect to ") + addrstr);
 
 		if(-1 == connect(sockfd, p->ai_addr, p->ai_addrlen)) {
-		    std::cerr << "connect() error: " << std::strerror(errno) << std::endl;
+            logDebug(std::string("connect() error: ") + std::strerror(errno));
 		    close(sockfd);
 		    continue;
     	}
 		break;
     }
     if(p == NULL) {
-		std::cerr << "Failed to connect" << std::endl;
+        logError("Connection failed!");
 		sockfd = -1;
 		return 1;
     }
-    std::cout << "Client: connected to " << addrstr << " on socket " << sockfd << std::endl;
+    logInfo(std::string("Connected to ") + addrstr);
+    logDebug(std::string("sockfd = ") + std::to_string(sockfd));
 
     freeaddrinfo(hostinfo);
 	return 0;
@@ -92,7 +93,7 @@ bool Client::create_client(const std::string &host, int port)
 std::string Client::recieve()
 {
 	if(sockfd == -1) {
-		std::cerr << "Bad socket! Exiting..." << std::endl;
+        logError("Bad socket for recieve!");
 		return "";
 	}
 	std::string msg(MAXDATASIZE, 0);

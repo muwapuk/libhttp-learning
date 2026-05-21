@@ -2,8 +2,9 @@
 
 #include "http.h"
 #include "networkfuncs.h"
+#include "logger.h"
 
-#include <iostream>
+#include <cassert>
 #include <cstring>
 #include <string.h>
 
@@ -11,18 +12,19 @@ using namespace libhttp;
 
 bool Server::listen(const std::string &host, int port)
 {
-	listen_sockfd = create_socket(host, port);
+	int listen_sockfd = create_socket(host, port);
 	if(listen_sockfd < 0) {
-		std::cerr << "Bad socket" << std::endl;
+        logError("Could not create socket!");
 		return 1;
 	}
 	fill_socket_info(host);
-	std::cout << "Listening on: " << ip << ':' << port << std::endl;
 
 	if(::listen(listen_sockfd, 10) == -1) {
-		std::cerr << "listen: " << std::strerror(errno) << std::endl;
+        logError("Could not set socket listen!");
+        logDebug(std::string("listen() error: ") + std::strerror(errno));
 		return 1;
 	}
+    logInfo(std::string("Listening on: ") + ip + ':' + std::to_string(port));
 	
 	poll_descriptors.reserve(poll_descriptors_size);
 	pollfd listen_pollfd;
@@ -33,8 +35,8 @@ bool Server::listen(const std::string &host, int port)
 	for(;;) {
 		int poll_count = poll(poll_descriptors.data(), poll_descriptors.size(), -1);
 		if(poll_count == -1) {
-			std::cerr << "Poll: " << std::strerror(errno) << std::endl;
-			/* ERROR HANDING */
+            logError("Could not poll socket events!");
+            logDebug(std::string("poll() error: ") + std::strerror(errno));
 			break;
 		}
 		process_descriptors(poll_count);
@@ -43,10 +45,9 @@ bool Server::listen(const std::string &host, int port)
 }
 int Server::create_socket(const std::string &host,
 						  int port,
-						  /*int address_family,*/ 
-						  int socket_flags)
+                          int socket_flags)
 {
-	int listen_sockfd;
+    int listen_sockfd;
 	addrinfo hints;
 
 	memset(&hints, 0, sizeof hints);
@@ -55,23 +56,23 @@ int Server::create_socket(const std::string &host,
 	addrinfo *servinfo;
 	std::string portstr = std::to_string(port);
 	if(0 != getaddrinfo(host.c_str(), portstr.c_str(), &hints, &servinfo)) {
-	    std::cerr << "getaddrinfo() error: " << std::strerror(errno) << std::endl; 
+        logDebug(std::string("getaddrinfo() error: ")  + std::strerror(errno));
 		return -1;
 	}
 	if(-1 == (listen_sockfd = socket(servinfo->ai_family,
 							  servinfo->ai_socktype,
 							  servinfo->ai_protocol))) {
-		std::cerr << "socket() error: " << std::strerror(errno) << std::endl; 
+        logDebug(std::string("socket() error: ")  + std::strerror(errno));
 		return -1;
 	}
 	// Reuse port
 	int yes=1;
 	if(-1 == setsockopt(listen_sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes)) { 
-	    std::cerr << "setsockoopt() error: " << std::strerror(errno) << std::endl; 
+        logDebug(std::string("setsockopt() error: ")  + std::strerror(errno));
 		return -1;
 	}
 	if(-1 == bind(listen_sockfd, servinfo->ai_addr, servinfo->ai_addrlen)) {
-	    std::cerr << "bind() error: " << std::strerror(errno) << std::endl; 
+        logError(std::string("bind() error: ")  + std::strerror(errno));
 		return -1;
 	}
 	freeaddrinfo(servinfo);
@@ -109,11 +110,13 @@ void Server::handle_new_connection()
 								 (sockaddr*)&client_addr,
 								 &client_addr_size);
 	if(client_sock == -1) {
-	    std::cerr << "Connection accept: " << std::strerror(errno) << std::endl;
+        logError("Could not handle new connection");
+        logDebug(std::string("accept() error: ") + std::strerror(errno));
 		/* ERROR HANDING */
 		return;
 	}
-	std::cout << "Accepted connection on descriptor " << client_sock << ": " << get_ip_string((sockaddr*)&client_addr) << std::endl;
+    logInfo(std::string("Accepted new connection from: ") + get_ip_string((sockaddr*)&client_addr));
+    logDebug(std::string("client_sock = ") + std::to_string(client_sock));
 	add_to_poll_descriptors(client_sock);
 }
 void Server::add_to_poll_descriptors(int fd)
@@ -134,9 +137,10 @@ void Server::handle_client_data(int pollfd_index)
 
 	if(nbytes <= 0) {
 		if(nbytes == 0) {
-			std::cout << "Server: socket " << client_fd << " closed" << std::endl;
+            logInfo(std::string("Closed connection with ") + get_ip_string(client_fd)); 
+            logDebug(std::string("client_sock = ") + std::to_string(client_fd));
 		} else {
-			std::cerr << "recv: " << std::strerror(errno) << std::endl;
+            logDebug(std::string("recv: ") + std::strerror(errno));
 		}
 		close(client_fd);
 		poll_descriptors.erase(poll_descriptors.begin() + pollfd_index);
@@ -144,7 +148,7 @@ void Server::handle_client_data(int pollfd_index)
 		Request req;
 		std::string bufstr{ buf };
 		if(req.parse_string(bufstr)) {
-			std::cerr << "Bad request from descriptor: " << client_fd << std::endl;
+            logInfo(std::string("Bad request from: ") + get_ip_string(client_fd));
 		} else {
 			handle_request(client_fd, req);
 		}
@@ -152,20 +156,20 @@ void Server::handle_client_data(int pollfd_index)
 }
 bool Server::send(int sockfd, const std::string &str)
 {
-	if(sockfd == -1) {
-		std::cerr << "Bad socket! Exiting..." << std::endl;
+	if(sockfd < 0) {
+        logError("Bad socket for send!");
 		return 1;
 	}
 	int strsize = str.length();
 	int	nbytes = ::send(sockfd, str.data(), strsize, 0);
 	if(nbytes == -1)
-		std::cerr << "send(): " << std::strerror(errno) << std::endl;
-
+        logDebug(std::string("send() error: ") + std::strerror(errno));
 	return 0;
 }
-bool Server::handle_request(int clientsock, Request &req) {
+void Server::handle_request(int clientsock, Request &req) {
+    assert(services.contains(req.path) && "NO SUCH SERVICE");
 	if(!services.contains(req.path)) {
-		return 1;	
+		return ;	
 	}
 	Response resp;
     auto& handler = services[req.path];
@@ -173,11 +177,8 @@ bool Server::handle_request(int clientsock, Request &req) {
 	
 	// -----
 	// SEND RESPONSE MADE BY HANDLER
-    
 
 	// -----
-	
-	return 0;
 }
 
 void Server::Get(std::string path, Handler h)

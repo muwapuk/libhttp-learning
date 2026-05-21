@@ -1,5 +1,7 @@
 #include "http.h"
 
+#include "logger.h"
+
 #include <iostream>
 #include <fstream>
 
@@ -23,7 +25,6 @@ bool Request::parse_string(const std::string &req)
 bool Request::parse_first_line(const std::string &req)
 {
 	ReadState read_state = ReadState::method;
-	std::cout << req << std::endl;	
 	for(int i = 0; i < req.length(); i++) {
 		switch(read_state) {
 			case ReadState::method:
@@ -84,14 +85,14 @@ bool Response::parse_first_line(const std::string &resp)
 			case ReadState::status:
 				if(resp[i] == ' ' || index == STATUS_CODE_STR_SIZE) {
 					if(index != STATUS_CODE_STR_SIZE) {
-						std::cerr << "Incorrect status code: " << strstatus << std::endl;
+                        logError("Invalid status code: " + strstatus);
 						return 1;
 					}
 					strstatus[index] = '\0';
 					try {
 						status_code = std::stoi(strstatus);
 					} catch(const std::invalid_argument &e) {
-						std::cerr << "Invalid status code: " << strstatus << std::endl;
+                        logError("Invalid status code: " + strstatus);
 					}
 					read_state = ReadState::reason;	
 					index = 0;
@@ -133,13 +134,13 @@ bool parse_headers(const std::string &data,
 
 	for(size_t i = 0; i < data.length(); i++) {
 		if(i >= MAX_HEADERS_SIZE) {
-			std::cerr << "Request headers too large!" << std::endl;
+            logDebug("Request headers too large");
 			return 1;
 		}
 		if(reading_name) {
 			if(data[i] == ':') {
 				if(name.empty()) {
-					std::cerr << "Request header key empty!" << std::endl;
+                    logDebug("Request header key empty");
 					return 1;
 				}
 				// Skip space character in header value
@@ -149,7 +150,7 @@ bool parse_headers(const std::string &data,
 			} else if(ALLOWED_HEADER_NAME_CHARS .find(data[i]) != std::string::npos) {
 				name.push_back(data[i]);
 			} else {
-				std::cerr << "Request header name contains not allowed character!" << std::endl;	
+                logDebug("Request header name contains not allowed character");
 				return 1;
 			}
 		} else { // Reading header value
@@ -166,7 +167,7 @@ bool parse_headers(const std::string &data,
 			} else if(ALLOWED_HEADER_VALUE_CHARS.find(data[i]) != std::string::npos) {
 				value.push_back(data[i]);
 			} else {
-				std::cerr << "Request header value contains not allowed character!" << std::endl;	
+                logDebug("Request header value contains not allowed character");
 				return 1;
 			}
 		}
@@ -179,15 +180,15 @@ headers_parse_exit:
 bool Response::set_header(const std::string &key, const std::string &val)
 {
 	if(key == "") {
-		std::cerr << "Header name cannot be empty!" << std::endl;
+        logDebug("Header name cannot be empty");
 		return 1;
 	}
 	if(!is_valid_header_name(key)) {
-		std::cerr << "Invalid header name!" << std::endl;
+        logDebug("Invalid header name");
 		return 1;
 	}
 	if(!is_valid_header_value(val)) {
-		std::cerr << "Invalid header value!" << std::endl;
+        logDebug("Invalid header value");
 		return 1;
 	}
 	if(val.empty()) 
@@ -216,7 +217,7 @@ void Response::set_file_content(const std::string &path,
 {
 	std::ifstream content_file(path, std::ios::in);
 	if(!content_file.is_open()) {
-		std::cerr << "Failed to open content file for reading!" << std::endl;
+        logError("Failed to open content file for reading!");
 	} else {
 		set_header("Content-Type", content_type);	
 		std::string content{std::istreambuf_iterator<char>(content_file), std::istreambuf_iterator<char>()};
@@ -226,10 +227,9 @@ void Response::set_file_content(const std::string &path,
 }
 void Response::set_file_content(const std::string &path)
 {
-
 	std::ifstream content_file(path, std::ios::in);
 	if(!content_file.is_open()) {
-		std::cerr << "Failed to open content file for reading!" << std::endl;
+        logError("Failed to open content file for reading!");
 	} else {
 		std::string content{std::istreambuf_iterator<char>(content_file), std::istreambuf_iterator<char>()};
 		body.assign(content);	
@@ -240,15 +240,15 @@ void Response::set_file_content(const std::string &path)
 bool Request::set_header(const std::string &key, const std::string &val)
 {
 	if(key == "") {
-		std::cerr << "Header name cannot be empty!" << std::endl;
+        logDebug("Header name cannot be empty");
 		return 1;
 	}
 	if(!is_valid_header_name(key)) {
-		std::cerr << "Invalid header name!" << std::endl;
+        logDebug("Invalid header name");
 		return 1;
 	}
 	if(!is_valid_header_value(val)) {
-		std::cerr << "Invalid header value!" << std::endl;
+        logDebug("Invalid header value");
 		return 1;
 	}
 	if(val.empty()) 
@@ -277,7 +277,7 @@ void Request::set_file_content(const std::string &path,
 {
 	std::ifstream content_file(path, std::ios::in);
 	if(!content_file.is_open()) {
-		std::cerr << "Failed to open content file for reading!" << std::endl;
+        logError("Failed to open content file for reading!");
 	} else {
 		set_header("Content-Type", content_type);	
 		std::string content{std::istreambuf_iterator<char>(content_file), std::istreambuf_iterator<char>()};
@@ -290,7 +290,7 @@ void Request::set_file_content(const std::string &path)
 
 	std::ifstream content_file(path, std::ios::in);
 	if(!content_file.is_open()) {
-		std::cerr << "Failed to open content file for reading!" << std::endl;
+        logError("Failed to open content file for reading!");
 	} else {
 		std::string content{std::istreambuf_iterator<char>(content_file), std::istreambuf_iterator<char>()};
 		body.assign(content);	

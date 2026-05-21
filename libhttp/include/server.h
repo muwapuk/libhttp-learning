@@ -16,6 +16,7 @@
 
 namespace libhttp 
 {
+
 class Server
 {	
 public:
@@ -44,14 +45,15 @@ private:
 	std::vector<pollfd> poll_descriptors;
 
     // Returns socket fd
-    int create_socket(const std::string &host, int port,
-			   		  /*int address_family,*/ int socket_flags = 0);    
+    int create_socket(const std::string &host,
+                        int port,
+			   		    int socket_flags = 0);    
 	bool fill_socket_info(const std::string &host);
 	void process_descriptors(int fd_count);
 	void handle_new_connection();
 	void add_to_poll_descriptors(int fd);
 	void handle_client_data(int pollfd_index);
-	bool handle_request(int clientsock, Request &);
+	void handle_request(int clientsock, Request &);
 	bool send(int clientsock, const std::string&);
 };
 
