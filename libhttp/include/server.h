@@ -31,7 +31,7 @@ public:
 	void Delete(std::string path, Handler);
 //
 private:
-	const int MAX_DATA_PAYLOAD = 100 * 1024*1024;
+	const int MAX_DATA_PAYLOAD = 32 * 1024;
 
     int listen_sockfd;
     std::string ip;
@@ -52,7 +52,7 @@ private:
 	void process_descriptors(int fd_count);
 	void handle_new_connection();
 	void add_to_poll_descriptors(int fd);
-	void handle_client_data(int pollfd_index);
+	void handle_client_data(int& pollfd_index);
 	void handle_request(int clientsock, Request &);
 	bool send(int clientsock, const std::string&);
 };

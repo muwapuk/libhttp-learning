@@ -12,7 +12,7 @@ using namespace libhttp;
 
 bool Server::listen(const std::string &host, int port)
 {
-	int listen_sockfd = create_socket(host, port);
+	listen_sockfd = create_socket(host, port);
 	if(listen_sockfd < 0) {
         logError("Could not create socket!");
 		return 1;
@@ -54,9 +54,9 @@ int Server::create_socket(const std::string &host,
 	hints.ai_socktype = SOCK_STREAM; // TCP
 
 	addrinfo *servinfo;
-	std::string portstr = std::to_string(port);
-	if(0 != getaddrinfo(host.c_str(), portstr.c_str(), &hints, &servinfo)) {
-        logDebug(std::string("getaddrinfo() error: ")  + std::strerror(errno));
+    auto gai_result = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &servinfo);
+    if(gai_result != 0) {
+        logDebug(std::string("getaddrinfo() error: ") + gai_strerror(gai_result));
 		return -1;
 	}
 	if(-1 == (listen_sockfd = socket(servinfo->ai_family,
@@ -93,13 +93,16 @@ bool Server::fill_socket_info(const std::string &host)
 }
 void Server::process_descriptors(int fd_count)
 {
-	for(int i = 0; i < fd_count; i++) {
+    int events_processed { 0 };
+	for(int i = 0; i < poll_descriptors.size(); i++) {
 		if(poll_descriptors[i].revents & (POLLIN | POLLHUP)) {
+            events_processed++;
 			if(poll_descriptors[i].fd == listen_sockfd)
 				handle_new_connection();
 			else
 				handle_client_data(i);
 		}
+        if(events_processed == fd_count) break;
 	}
 }
 void Server::handle_new_connection()
@@ -128,7 +131,9 @@ void Server::add_to_poll_descriptors(int fd)
 
 	poll_descriptors.push_back(newfd);
 }
-void Server::handle_client_data(int pollfd_index)
+// pollfd_index is decreased by 1 if descriptor removed from poll_descriptors
+// Beeded for correct iteration inside poll descriptors loop
+void Server::handle_client_data(int& pollfd_index) 
 {
 	char buf[MAX_DATA_PAYLOAD];
 	int client_fd = poll_descriptors[pollfd_index].fd; 
@@ -143,10 +148,12 @@ void Server::handle_client_data(int pollfd_index)
             logDebug(std::string("recv: ") + std::strerror(errno));
 		}
 		close(client_fd);
-		poll_descriptors.erase(poll_descriptors.begin() + pollfd_index);
+		poll_descriptors.erase(poll_descriptors.begin() + pollfd_index--);
 	} else {
 		Request req;
-		std::string bufstr{ buf };
+		std::string bufstr {};
+        bufstr.append(buf, nbytes);
+        
 		if(req.parse_string(bufstr)) {
             logInfo(std::string("Bad request from: ") + get_ip_string(client_fd));
 		} else {

@@ -7,8 +7,6 @@
 #include <sys/socket.h>
 #include <networkfuncs.h>
 
-const char *PORT = "3490";
-const int MAXDATASIZE = 100;
 using namespace libhttp;
 
 Client::Client(std::string url)
@@ -54,8 +52,9 @@ bool Client::create_client(const std::string &host, int port)
     hints.ai_socktype = SOCK_STREAM;
 
     addrinfo *hostinfo;
-    if(0 != getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &hostinfo)) {
-        logDebug(std::string("getaddrinfo() error: ") + std::strerror(errno));
+    auto gai_result = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &hostinfo);
+    if(gai_result != 0) {
+        logDebug(std::string("getaddrinfo() error: ") + gai_strerror(gai_result));
 		return 1;
     }
     addrinfo *p;
@@ -90,10 +89,10 @@ bool Client::create_client(const std::string &host, int port)
     freeaddrinfo(hostinfo);
 	return 0;
 }
-std::string Client::recieve()
+std::string Client::receive()
 {
 	if(sockfd == -1) {
-        logError("Bad socket for recieve!");
+        logError("Bad socket for receive!");
 		return "";
 	}
 	std::string msg(MAXDATASIZE, 0);

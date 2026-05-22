@@ -14,12 +14,12 @@ namespace libhttp
 {
 class Client
 {
-    const int MAXDATASIZE = 10;
+    const int MAXDATASIZE = 100;
     int sockfd;
 
 	bool create_client(const std::string &addr, int port);
 
-	std::string recieve();
+	std::string receive();
 public:
     Client(const std::string addr);
     Client(const std::string addr, int port);
