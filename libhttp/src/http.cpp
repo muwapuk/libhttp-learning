@@ -9,173 +9,263 @@
 using namespace libhttp;
 
 namespace {
-	bool parse_headers(const std::string &data, std::unordered_map<std::string, std::string> &headers);
-	bool is_valid_header_name(const std::string &name);
-	bool is_valid_header_value(const std::string &val);
+	ParseResult parse_headers_(const std::string &data, 
+                               std::unordered_map<std::string, std::string> &headers,
+                               int &pos);
+	ParseResult parse_body_(const std::string &data, 
+                            std::unordered_map<std::string, std::string> &headers,
+                            std::string &body,
+                            int &pos);
+	bool is_valid_header_name_(const std::string &name);
+	bool is_valid_header_value_(const std::string &val);
 }
 
-bool Request::parse_string(const std::string &req)
+ParseResult Request::parse_string(const std::string &req)
 {
-	if(parse_first_line(req))
-		return 1;
-	if(parse_headers(req,headers))
-		return 1;
-	return 0;
+    switch(parse_state_) {
+        ParseResult res;
+        case ParseState::StartLine:
+             res = parse_first_line_(req);
+            if(res == ParseResult::Incomplete) {
+                return res;
+            } else if (res == ParseResult::Error) {
+                parse_state_ = ParseState::Error;
+                return res;
+            }
+            parse_state_ = ParseState::Headers;
+        case ParseState::Headers:
+            res = parse_headers_(req, headers, parse_index_);
+            if(res == ParseResult::Incomplete) {
+                return res;
+            } else if (res == ParseResult::Error) {
+                parse_state_ = ParseState::Error;
+                return res;
+            }
+            parse_state_ = ParseState::Body;
+        case ParseState::Body:
+            res = parse_body_(req, headers, body, parse_index_);
+            if(res == ParseResult::Incomplete) {
+                return res;
+            } else if (res == ParseResult::Error) {
+                parse_state_ = ParseState::Error;
+                return res;
+            }
+            parse_state_ = ParseState::Complete;
+        case ParseState::Complete:
+            return ParseResult::Complete;
+        case ParseState::Error:
+            return ParseResult::Error;
+    }
 }
-bool Request::parse_first_line(const std::string &req)
+ParseResult Request::parse_first_line_(const std::string &req)
 {
-	ReadState read_state = ReadState::method;
-	for(int i = 0; i < req.length(); i++) {
-		switch(read_state) {
-			case ReadState::method:
-				if(req[i] == ' ' || index == MAX_METHOD_SIZE) {
-					method[index] = '\0';
-					read_state = ReadState::path;	
-					index = 0;
-					continue;
-				}
-				method[index] = req[i];
-			break;
-			case ReadState::path:
-				if(req[i] == ' ' || index == MAX_PATH_SIZE) {
-					path[index] = '\0';
-					read_state = ReadState::version;	
-					index = 0;
-					continue;
-				}
-				path[index] = req[i];
-			break;
-			case ReadState::version:
-				if(req[i] == '\n' || index == MAX_VERSION_SIZE) {
-					version[index] = '\0';
-					index = i; // Set index to first line end for headers parser
-					goto request_parse_exit; 
-				}
-				version[index] = req[i];
-			break;
-			default: return 1; 
-		}
-	}
-request_parse_exit:
-	return 0;
-}
-bool Response::parse_string(const std::string &resp)
-{
-	if(parse_first_line(resp))
-		return 1;
-	if(parse_headers(resp,headers))
-		return 1;
-	return 0;
-}
-bool Response::parse_first_line(const std::string &resp)
-{
-	ReadState read_state = ReadState::version;
-	std::string strstatus = std::string(STATUS_CODE_STR_SIZE, 0); // Status is a 3 digit string (200, 404) 
-	for(int i = 0; i < resp.length(); i++) {
-		switch(read_state) {
-			case ReadState::version:
-				if(resp[i] == ' ' || index == MAX_METHOD_SIZE) {
-					version[index] = '\0';
-					read_state = ReadState::status;	
-					index = 0;
-					continue;
-				}
-				version[index] = resp[i];
-			break;
-			case ReadState::status:
-				if(resp[i] == ' ' || index == STATUS_CODE_STR_SIZE) {
-					if(index != STATUS_CODE_STR_SIZE) {
-                        logError("Invalid status code: " + strstatus);
-						return 1;
-					}
-					strstatus[index] = '\0';
-					try {
-						status_code = std::stoi(strstatus);
-					} catch(const std::invalid_argument &e) {
-                        logError("Invalid status code: " + strstatus);
-					}
-					read_state = ReadState::reason;	
-					index = 0;
-					continue;
-				}
-				strstatus[index] = resp[i];
-			break;
-			case ReadState::reason:
-				if(resp[i] == '\n' || index == MAX_REASON_SIZE) {
-					reason[index] = '\0';
-					index = i; // Set index to first line end for headers parser
-					goto response_parse_exit; 
-				}
-				reason[index] = resp[i];
-			break;
-			default: return 1; 
-		}
-	}
-response_parse_exit:
+    auto firstLineEnd = req.find("\r\n");
+    if(firstLineEnd == std::string::npos) 
+        return ParseResult::Incomplete;
+    std::string firstLine = req.substr(0, firstLineEnd);
 
-	return 0;
+    // METHOD
+    auto tokenEnd = firstLine.find(' ');  
+    if(tokenEnd == std::string::npos) { 
+        logDebug("Invalid request first line!");
+        return ParseResult::Error;
+    }
+    method = firstLine.substr(0, tokenEnd); 
+    if(method.size() > MAX_METHOD_SIZE || method.size() <= 0) {
+        logDebug("Invalid method size!");
+        return ParseResult::Error;
+    }
+    firstLine.erase(0, tokenEnd);
+
+    // PATH
+    tokenEnd = firstLine.find(' ');  
+    if(tokenEnd == std::string::npos) { 
+        logDebug("Invalid request first line!");
+        return ParseResult::Error;
+    }
+    path = firstLine.substr(0, tokenEnd); 
+    if(path.size() > MAX_PATH_SIZE || path.size() <= 0) {
+        logDebug("Invalid path size!");
+        return ParseResult::Error;
+    }
+    firstLine.erase(0, tokenEnd);
+
+    // VERSION
+    version = firstLine; 
+    if(version.size() > MAX_VERSION_SIZE || version.size() <= 0) {
+        logDebug("Invalid version size!");
+        return ParseResult::Error;
+    }
+    parse_index_ = firstLineEnd+2;
+    return ParseResult::Complete;
+}
+ParseResult Response::parse_string(const std::string &resp)
+{
+    switch(parse_state_) {
+        ParseResult res;
+        case ParseState::StartLine:
+             res = parse_first_line_(resp);
+            if(res == ParseResult::Incomplete) {
+                return res;
+            } else if (res == ParseResult::Error) {
+                parse_state_ = ParseState::Error;
+                return res;
+            }
+            parse_state_ = ParseState::Headers;
+        case ParseState::Headers:
+            res = parse_headers_(resp, headers, parse_index_);
+            if(res == ParseResult::Incomplete) {
+                return res;
+            } else if (res == ParseResult::Error) {
+                parse_state_ = ParseState::Error;
+                return res;
+            }
+            parse_state_ = ParseState::Body;
+        case ParseState::Body:
+            res = parse_body_(resp, headers, body, parse_index_);
+            if(res == ParseResult::Incomplete) {
+                return res;
+            } else if (res == ParseResult::Error) {
+                parse_state_ = ParseState::Error;
+                return res;
+            }
+            parse_state_ = ParseState::Complete;
+        case ParseState::Complete:
+            return ParseResult::Complete;
+        case ParseState::Error:
+            return ParseResult::Error;
+    }
+}
+ParseResult Response::parse_first_line_(const std::string &resp)
+{
+    auto firstLineEnd = resp.find("\r\n");
+    if(firstLineEnd == std::string::npos) 
+        return ParseResult::Incomplete;
+    std::string firstLine = resp.substr(0, firstLineEnd);
+
+    // VERSION
+    auto tokenEnd = firstLine.find(' ');  
+    if(tokenEnd == std::string::npos) { 
+        logDebug("Invalid request first line!");
+        return ParseResult::Error;
+    }
+    version = firstLine.substr(0, tokenEnd); 
+    if(version.size() > MAX_VERSION_SIZE || version.size() <= 0) {
+        logDebug("Invalid version size!");
+        return ParseResult::Error;
+    }
+    firstLine.erase(0, tokenEnd);
+
+    // STATUS CODE
+    tokenEnd = firstLine.find(' ');  
+    if(tokenEnd == std::string::npos) { 
+        logDebug("Invalid request first line!");
+        return ParseResult::Error;
+    }
+    std::string statusCodeStr = firstLine.substr(0, tokenEnd); 
+    if(statusCodeStr.size() > STATUS_CODE_STR_SIZE || statusCodeStr.size() <= 0) {
+        logDebug("Invalid status code size!");
+        return ParseResult::Error;
+    }
+    try {
+        status_code = std::stoi(statusCodeStr);
+    } catch (const std::exception& e) {
+        logDebug("Invalid status code!");
+        return ParseResult::Error;
+    }
+    firstLine.erase(0, tokenEnd);
+
+    // REASON
+    version = firstLine; 
+    if(version.size() > MAX_REASON_SIZE || version.size() <= 0) {
+        logDebug("Invalid reason size!");
+        return ParseResult::Error;
+    }
+    parse_index_ = firstLineEnd+2;
+    return ParseResult::Complete;
 }
 namespace {
-bool is_valid_header_name(const std::string &name)
+bool is_valid_header_name_(const std::string &name)
 {
 	return name.find_first_not_of(ALLOWED_HEADER_NAME_CHARS) == std::string::npos;
 }
-bool is_valid_header_value(const std::string &val)
+bool is_valid_header_value_(const std::string &val)
 {
 	return val.find_first_not_of(ALLOWED_HEADER_VALUE_CHARS) == std::string::npos;
 }
-bool parse_headers(const std::string &data, 
-				   std::unordered_map<std::string, std::string> &headers)
+ParseResult parse_headers_(const std::string &data, 
+				    std::unordered_map<std::string, std::string> &headers,
+                    int& pos)
 {
-	std::string name = "";
-	std::string value = "";
+    auto headersEnd = data.find("\r\n\r\n");
+    if(headersEnd == std::string::npos)
+        return ParseResult::Incomplete;
+    std::string headersStr = data.substr(pos, headersEnd);
+    if(headersStr.size() > MAX_HEADERS_SIZE) {
+        logDebug("Headers size too large!");
+        return ParseResult::Error;
+    }
 
-	bool reading_name = 1; // If not -> reading value
+    std::string token;
+    for(;;) {
+        token = headersStr.substr(0, headersStr.find("\r\n"));
+        if(token.empty()) // found "\r\n\r\n"
+            break;
+        auto delimiterPos = token.find(' ');
+        if(delimiterPos == std::string::npos) {
+            logDebug("Invalid header!");
+            return ParseResult::Error;
+        }
+        std::string name { token.substr(0,delimiterPos) };
+        std::string value { token.substr(delimiterPos+1, token.size()-delimiterPos) };
+        if(is_valid_header_name_(name)) {
+            logDebug("Invalid header name!");
+            return ParseResult::Error;
+        }
+        if(is_valid_header_value_(value)) {
+            logDebug("Invalid header value!");
+            return ParseResult::Error;
+        }
+        headers[name] = value;
+    }
+    pos = headersEnd+4;
+    return ParseResult::Complete;
+}
 
-	for(size_t i = 0; i < data.length(); i++) {
-		if(i >= MAX_HEADERS_SIZE) {
-            logDebug("Request headers too large");
-			return 1;
-		}
-		if(reading_name) {
-			if(data[i] == ':') {
-				if(name.empty()) {
-                    logDebug("Request header key empty");
-					return 1;
-				}
-				// Skip space character in header value
-				if(i+1 < data.length())
-					i++;
-				reading_name = false;
-			} else if(ALLOWED_HEADER_NAME_CHARS .find(data[i]) != std::string::npos) {
-				name.push_back(data[i]);
-			} else {
-                logDebug("Request header name contains not allowed character");
-				return 1;
-			}
-		} else { // Reading header value
-			if(data[i] == '\n') {
-				if(i+5 <= data.length()
-				&& data.compare(i + 1, 4, "\r\n\r\n") == 0) {
-					i += 4;
-                    break;
-				} 
-				headers[name] = value;
-				name = "";
-				value = "";
-				reading_name = true;		
-			} else if(ALLOWED_HEADER_VALUE_CHARS.find(data[i]) != std::string::npos) {
-				value.push_back(data[i]);
-			} else {
-                logDebug("Request header value contains not allowed character");
-				return 1;
-			}
-		}
-	}
-headers_parse_exit:
-	return 0;
+ParseResult parse_body_(const std::string &data, 
+                        std::unordered_map<std::string, std::string> &headers,
+                        std::string &body,
+                        int &pos)
+{
+    if(headers["Transfer-Encoding"] == "Chunked") {
+        logInfo("Unsupported body format!");
+        return ParseResult::Error;
+    }
+    if(!headers["Content-Length"].empty()) {
+        int contentLen;
+        try {
+            contentLen = std::stoi(headers["Content-Length"]);
+        } catch (const std::exception& e) {
+            logDebug("Invalid Content-Length!");
+            return ParseResult::Error;
+        }
+        if(contentLen > MAX_BODY_SIZE) {
+            logInfo("Content-Length too large!");
+            return ParseResult::Error;
+        }
+        if(contentLen > data.size()-pos) {
+            body.append(data.begin()+pos, data.end());
+            pos = data.size();
+            return ParseResult::Incomplete;
+        } else {
+            body.append(data.begin()+pos, data.begin()+pos+contentLen);
+            pos = pos+contentLen;
+            return ParseResult::Complete;
+        }
+    }
+    return ParseResult::Complete;
 }
-}
+} // namespace end
 
 bool Response::set_header(const std::string &key, const std::string &val)
 {
@@ -183,11 +273,11 @@ bool Response::set_header(const std::string &key, const std::string &val)
         logDebug("Header name cannot be empty");
 		return 1;
 	}
-	if(!is_valid_header_name(key)) {
+	if(!is_valid_header_name_(key)) {
         logDebug("Invalid header name");
 		return 1;
 	}
-	if(!is_valid_header_value(val)) {
+	if(!is_valid_header_value_(val)) {
         logDebug("Invalid header value");
 		return 1;
 	}
@@ -243,11 +333,11 @@ bool Request::set_header(const std::string &key, const std::string &val)
         logDebug("Header name cannot be empty");
 		return 1;
 	}
-	if(!is_valid_header_name(key)) {
+	if(!is_valid_header_name_(key)) {
         logDebug("Invalid header name");
 		return 1;
 	}
-	if(!is_valid_header_value(val)) {
+	if(!is_valid_header_value_(val)) {
         logDebug("Invalid header value");
 		return 1;
 	}

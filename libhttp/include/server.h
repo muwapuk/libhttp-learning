@@ -17,10 +17,30 @@
 namespace libhttp 
 {
 
+struct Connection {
+    int sockfd;
+    std::string write_buffer;
+    std::string read_buffer;
+    bool keep_alive;
+};
+
 class Server
 {	
-public:
+	const int MAX_DATA_PAYLOAD = 32 * 1024;
+
+    int listen_sockfd;
+    std::string ip;
+    std::string hostname;
+    int port;
+
 	using Handler = std::function<void(const Request &, Response &)>;
+	std::unordered_map<std::string, Handler>services;
+
+	int poll_descriptors_count;
+	std::vector<pollfd> poll_descriptors;
+    std::unordered_map<int, Connection> connections;
+
+public:
     bool listen(const std::string &host, int port);
 
 	void Get(std::string path, Handler); 
@@ -31,27 +51,13 @@ public:
 	void Delete(std::string path, Handler);
 //
 private:
-	const int MAX_DATA_PAYLOAD = 32 * 1024;
-
-    int listen_sockfd;
-    std::string ip;
-    std::string hostname;
-    int port;
-
-	std::unordered_map<std::string, Handler>services;
-
-	int poll_descriptors_count;
-	size_t poll_descriptors_size = 4;
-	std::vector<pollfd> poll_descriptors;
-
     // Returns socket fd
     int create_socket(const std::string &host,
                         int port,
 			   		    int socket_flags = 0);    
-	bool fill_socket_info(const std::string &host);
+	void fill_server_info(const std::string &host);
 	void process_descriptors(int fd_count);
 	void handle_new_connection();
-	void add_to_poll_descriptors(int fd);
 	void handle_client_data(int& pollfd_index);
 	void handle_request(int clientsock, Request &);
 	bool send(int clientsock, const std::string&);

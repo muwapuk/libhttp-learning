@@ -17,7 +17,7 @@ bool Server::listen(const std::string &host, int port)
         logError("Could not create socket!");
 		return 1;
 	}
-	fill_socket_info(host);
+	fill_server_info(host);
 
 	if(::listen(listen_sockfd, 10) == -1) {
         logError("Could not set socket listen!");
@@ -26,11 +26,12 @@ bool Server::listen(const std::string &host, int port)
 	}
     logInfo(std::string("Listening on: ") + ip + ':' + std::to_string(port));
 	
-	poll_descriptors.reserve(poll_descriptors_size);
-	pollfd listen_pollfd;
-	listen_pollfd.fd = listen_sockfd;
-	listen_pollfd.events = POLLIN;
-	poll_descriptors.push_back(listen_pollfd);
+    poll_descriptors.push_back(
+        pollfd {
+            .fd = listen_sockfd,
+            .events = POLLIN,
+        }
+    );
 
 	for(;;) {
 		int poll_count = poll(poll_descriptors.data(), poll_descriptors.size(), -1);
@@ -80,7 +81,7 @@ int Server::create_socket(const std::string &host,
 	return listen_sockfd;
 }
 
-bool Server::fill_socket_info(const std::string &host)
+void Server::fill_server_info(const std::string &host)
 {
 	sockaddr_storage addr;
 	socklen_t addr_len = sizeof(addr);
@@ -88,8 +89,6 @@ bool Server::fill_socket_info(const std::string &host)
 
 	hostname = host;
 	ip = get_ip_string((sockaddr*)&addr);
-
-	return 0;
 }
 void Server::process_descriptors(int fd_count)
 {
@@ -109,30 +108,29 @@ void Server::handle_new_connection()
 {
 	sockaddr_storage client_addr;
 	socklen_t client_addr_size = sizeof(client_addr);
-	int client_sock = accept(listen_sockfd,
+	int client_fd = accept(listen_sockfd,
 								 (sockaddr*)&client_addr,
 								 &client_addr_size);
-	if(client_sock == -1) {
+	if(client_fd == -1) {
         logError("Could not handle new connection");
         logDebug(std::string("accept() error: ") + std::strerror(errno));
 		/* ERROR HANDING */
 		return;
 	}
     logInfo(std::string("Accepted new connection from: ") + get_ip_string((sockaddr*)&client_addr));
-    logDebug(std::string("client_sock = ") + std::to_string(client_sock));
-	add_to_poll_descriptors(client_sock);
-}
-void Server::add_to_poll_descriptors(int fd)
-{
-	pollfd newfd;
-	newfd.fd = fd;
-	newfd.events = POLLIN;
-	newfd.revents = 0;
+    logDebug(std::string("client_sock = ") + std::to_string(client_fd));
 
-	poll_descriptors.push_back(newfd);
+	poll_descriptors.push_back(
+        pollfd {
+            .fd = client_fd,
+            .events = POLLIN,
+            .revents = 0 
+        }
+    );
+    connections[client_fd].sockfd = client_fd;
 }
 // pollfd_index is decreased by 1 if descriptor removed from poll_descriptors
-// Beeded for correct iteration inside poll descriptors loop
+// Needed for correct iteration inside poll descriptors loop
 void Server::handle_client_data(int& pollfd_index) 
 {
 	char buf[MAX_DATA_PAYLOAD];
@@ -149,16 +147,27 @@ void Server::handle_client_data(int& pollfd_index)
 		}
 		close(client_fd);
 		poll_descriptors.erase(poll_descriptors.begin() + pollfd_index--);
+        connections.erase(client_fd);
 	} else {
 		Request req;
 		std::string bufstr {};
         bufstr.append(buf, nbytes);
+
+        switch(req.parse_string(bufstr)) {
+            case ParseResult::Complete:
+                logInfo("Got request from " + get_ip_string(client_fd)); 
+			    handle_request(client_fd, req);
+                // TODO keep alive or close
+                break;
+            case ParseResult::Incomplete:
+                logInfo("Message from " + get_ip_string(client_fd) + " is not finished. Waiting for completion.");
+                // TODO write to the connection buffer
+                break;
+            case ParseResult::Error:
+                logInfo("Bad request from " + get_ip_string(client_fd));
+                // TODO close the connection
+                break;
         
-		if(req.parse_string(bufstr)) {
-            logInfo(std::string("Bad request from: ") + get_ip_string(client_fd));
-		} else {
-			handle_request(client_fd, req);
-		}
 	}
 }
 bool Server::send(int sockfd, const std::string &str)
