@@ -128,6 +128,7 @@ void Server::handle_new_connection()
         }
     );
     connections[client_fd].sockfd = client_fd;
+    connections[client_fd].ip_str = get_ip_string(client_fd);
 }
 // pollfd_index is decreased by 1 if descriptor removed from poll_descriptors
 // Needed for correct iteration inside poll descriptors loop
@@ -140,7 +141,7 @@ void Server::handle_client_data(int& pollfd_index)
 
 	if(nbytes <= 0) {
 		if(nbytes == 0) {
-            logInfo(std::string("Closed connection with ") + get_ip_string(client_fd)); 
+            logInfo(std::string("Closed connection with ") + connections[client_fd].ip_str);
             logDebug(std::string("client_sock = ") + std::to_string(client_fd));
 		} else {
             logDebug(std::string("recv: ") + std::strerror(errno));
@@ -149,24 +150,26 @@ void Server::handle_client_data(int& pollfd_index)
 		poll_descriptors.erase(poll_descriptors.begin() + pollfd_index--);
         connections.erase(client_fd);
 	} else {
-		Request req;
-		std::string bufstr {};
-        bufstr.append(buf, nbytes);
+        connections[client_fd].read_buffer.append(buf, nbytes);
 
-        switch(req.parse_string(bufstr)) {
+        auto& con { connections[client_fd] };
+
+        auto result = con.request->parse_string(con.read_buffer);
+        switch(result) {
             case ParseResult::Complete:
-                logInfo("Got request from " + get_ip_string(client_fd)); 
-			    handle_request(client_fd, req);
+                logInfo("Got request from " + con.ip_str); 
+                con.read_buffer.clear();
+			    handle_request(client_fd, *con.request);
                 // TODO keep alive or close
                 break;
             case ParseResult::Incomplete:
-                logInfo("Message from " + get_ip_string(client_fd) + " is not finished. Waiting for completion.");
-                // TODO write to the connection buffer
+                logInfo("Message from " + con.ip_str + " is not finished. Waiting for completion.");
                 break;
             case ParseResult::Error:
-                logInfo("Bad request from " + get_ip_string(client_fd));
-                // TODO close the connection
+                logInfo("Bad request from " + con.ip_str);
+                // TODO analize buffer and close the connection
                 break;
+        }
         
 	}
 }
@@ -183,9 +186,12 @@ bool Server::send(int sockfd, const std::string &str)
 	return 0;
 }
 void Server::handle_request(int clientsock, Request &req) {
-    assert(services.contains(req.path) && "NO SUCH SERVICE");
 	if(!services.contains(req.path)) {
-		return ;	
+        logInfo("Request to unknown service from " 
+                + connections[clientsock].ip_str 
+                + ": " 
+                + req.path);
+		return;	
 	}
 	Response resp;
     auto& handler = services[req.path];
@@ -193,11 +199,10 @@ void Server::handle_request(int clientsock, Request &req) {
 	
 	// -----
 	// SEND RESPONSE MADE BY HANDLER
-
 	// -----
 }
 
-void Server::Get(std::string path, Handler h)
+void Server::Get(std::string path, Handler handler)
 {
-	services[path] = h;
+	services[path] = handler;
 }

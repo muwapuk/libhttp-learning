@@ -6,15 +6,8 @@
 int main(int argc, char **argv)
 {
 	libhttp::Server srv;
-    std::string str{"fasdfa"};
 
-    logInfo(str);
-    logInfo("INFO");
-    logDebug("DEBUG");
-    logWarn("WARRNING");
-    logError("ERROR");
-
-	srv.Get("/hi", [](const libhttp::Request &req, libhttp::Response &res) {
+	srv.Get("/", [](const libhttp::Request &req, libhttp::Response &res) {
 		for(auto header : req.headers) {
 			std::cout << header.first << ':' << header.second << '\n';
 		}

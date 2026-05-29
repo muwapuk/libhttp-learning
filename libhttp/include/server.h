@@ -11,6 +11,7 @@
 #include <poll.h>
 #include <vector>
 #include <functional>
+#include <memory>
 
 #include "http.h"
 
@@ -19,8 +20,13 @@ namespace libhttp
 
 struct Connection {
     int sockfd;
+    std::string ip_str;
+    
     std::string write_buffer;
     std::string read_buffer;
+
+    std::unique_ptr<Request> request { new Request };
+
     bool keep_alive;
 };
 

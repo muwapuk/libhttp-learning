@@ -25,7 +25,7 @@ ParseResult Request::parse_string(const std::string &req)
     switch(parse_state_) {
         ParseResult res;
         case ParseState::StartLine:
-             res = parse_first_line_(req);
+            res = parse_first_line_(req);
             if(res == ParseResult::Incomplete) {
                 return res;
             } else if (res == ParseResult::Error) {
@@ -55,6 +55,8 @@ ParseResult Request::parse_string(const std::string &req)
             return ParseResult::Complete;
         case ParseState::Error:
             return ParseResult::Error;
+        default:
+            return ParseResult::Error;
     }
 }
 ParseResult Request::parse_first_line_(const std::string &req)
@@ -71,11 +73,11 @@ ParseResult Request::parse_first_line_(const std::string &req)
         return ParseResult::Error;
     }
     method = firstLine.substr(0, tokenEnd); 
-    if(method.size() > MAX_METHOD_SIZE || method.size() <= 0) {
+    if(method.size() > MAX_METHOD_SIZE) {
         logDebug("Invalid method size!");
         return ParseResult::Error;
     }
-    firstLine.erase(0, tokenEnd);
+    firstLine.erase(0, tokenEnd+1);
 
     // PATH
     tokenEnd = firstLine.find(' ');  
@@ -84,15 +86,15 @@ ParseResult Request::parse_first_line_(const std::string &req)
         return ParseResult::Error;
     }
     path = firstLine.substr(0, tokenEnd); 
-    if(path.size() > MAX_PATH_SIZE || path.size() <= 0) {
+    if(path.size() > MAX_PATH_SIZE) {
         logDebug("Invalid path size!");
         return ParseResult::Error;
     }
-    firstLine.erase(0, tokenEnd);
+    firstLine.erase(0, tokenEnd+1);
 
     // VERSION
     version = firstLine; 
-    if(version.size() > MAX_VERSION_SIZE || version.size() <= 0) {
+    if(version.size() > MAX_VERSION_SIZE) {
         logDebug("Invalid version size!");
         return ParseResult::Error;
     }
@@ -104,7 +106,7 @@ ParseResult Response::parse_string(const std::string &resp)
     switch(parse_state_) {
         ParseResult res;
         case ParseState::StartLine:
-             res = parse_first_line_(resp);
+            res = parse_first_line_(resp);
             if(res == ParseResult::Incomplete) {
                 return res;
             } else if (res == ParseResult::Error) {
@@ -134,6 +136,8 @@ ParseResult Response::parse_string(const std::string &resp)
             return ParseResult::Complete;
         case ParseState::Error:
             return ParseResult::Error;
+        default:
+            return ParseResult::Error;
     }
 }
 ParseResult Response::parse_first_line_(const std::string &resp)
@@ -150,11 +154,11 @@ ParseResult Response::parse_first_line_(const std::string &resp)
         return ParseResult::Error;
     }
     version = firstLine.substr(0, tokenEnd); 
-    if(version.size() > MAX_VERSION_SIZE || version.size() <= 0) {
+    if(version.size() > MAX_VERSION_SIZE) {
         logDebug("Invalid version size!");
         return ParseResult::Error;
     }
-    firstLine.erase(0, tokenEnd);
+    firstLine.erase(0, tokenEnd+1);
 
     // STATUS CODE
     tokenEnd = firstLine.find(' ');  
@@ -163,7 +167,7 @@ ParseResult Response::parse_first_line_(const std::string &resp)
         return ParseResult::Error;
     }
     std::string statusCodeStr = firstLine.substr(0, tokenEnd); 
-    if(statusCodeStr.size() > STATUS_CODE_STR_SIZE || statusCodeStr.size() <= 0) {
+    if(statusCodeStr.size() != STATUS_CODE_STR_SIZE) {
         logDebug("Invalid status code size!");
         return ParseResult::Error;
     }
@@ -173,7 +177,7 @@ ParseResult Response::parse_first_line_(const std::string &resp)
         logDebug("Invalid status code!");
         return ParseResult::Error;
     }
-    firstLine.erase(0, tokenEnd);
+    firstLine.erase(0, tokenEnd+1);
 
     // REASON
     version = firstLine; 
@@ -209,6 +213,7 @@ ParseResult parse_headers_(const std::string &data,
     std::string token;
     for(;;) {
         token = headersStr.substr(0, headersStr.find("\r\n"));
+        headersStr.erase(0, token.length()+2);
         if(token.empty()) // found "\r\n\r\n"
             break;
         auto delimiterPos = token.find(' ');
@@ -216,13 +221,13 @@ ParseResult parse_headers_(const std::string &data,
             logDebug("Invalid header!");
             return ParseResult::Error;
         }
-        std::string name { token.substr(0,delimiterPos) };
+        std::string name { token.substr(0,delimiterPos-1) };
         std::string value { token.substr(delimiterPos+1, token.size()-delimiterPos) };
-        if(is_valid_header_name_(name)) {
+        if(!is_valid_header_name_(name)) {
             logDebug("Invalid header name!");
             return ParseResult::Error;
         }
-        if(is_valid_header_value_(value)) {
+        if(!is_valid_header_value_(value)) {
             logDebug("Invalid header value!");
             return ParseResult::Error;
         }
