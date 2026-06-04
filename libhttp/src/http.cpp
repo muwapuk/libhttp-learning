@@ -2,8 +2,10 @@
 
 #include "logger.h"
 
+#include <cassert>
 #include <iostream>
 #include <fstream>
+#include <set>
 
 
 using namespace libhttp;
@@ -33,6 +35,7 @@ ParseResult Request::parse_string(const std::string &req)
                 return res;
             }
             parse_state_ = ParseState::Headers;
+            [[fallthrough]];
         case ParseState::Headers:
             res = parse_headers_(req, headers, parse_index_);
             if(res == ParseResult::Incomplete) {
@@ -42,6 +45,7 @@ ParseResult Request::parse_string(const std::string &req)
                 return res;
             }
             parse_state_ = ParseState::Body;
+            [[fallthrough]];
         case ParseState::Body:
             res = parse_body_(req, headers, body, parse_index_);
             if(res == ParseResult::Incomplete) {
@@ -51,6 +55,7 @@ ParseResult Request::parse_string(const std::string &req)
                 return res;
             }
             parse_state_ = ParseState::Complete;
+            [[fallthrough]];
         case ParseState::Complete:
             return ParseResult::Complete;
         case ParseState::Error:
@@ -58,6 +63,37 @@ ParseResult Request::parse_string(const std::string &req)
         default:
             return ParseResult::Error;
     }
+}
+std::string Request::serialize() 
+{
+    const std::set<std::string> methods{
+        "GET",     "HEAD",    "POST",  "PUT",   "DELETE",
+        "CONNECT", "OPTIONS", "TRACE", "PATCH", "PRI"};
+    if (methods.find(method) == methods.end()) {
+        logError("Serialize error: Request struct is invalid!");
+        return "";
+    }
+    if (version != "HTTP/1.1" && version != "HTTP/1.0") {
+        logError("Serialize error: Invalid HTTP version!");
+        return "";
+    }
+    
+    if(path.empty() || path.size() > MAX_PATH_SIZE) {
+        logError("Serialize error: Request path is invalid!");
+        return "";
+    }
+    // First line
+    headers["Content-Length"] = std::to_string(body.size());
+    std::string reqstr = method + ' ' + path + ' ' + version + "\r\n";
+    // Headers
+    for(auto& header : headers) {
+        reqstr += header.first + ": " + header.second + "\r\n";
+    }
+    reqstr += "\r\n";
+    // Body
+    reqstr += body;
+
+    return reqstr; 
 }
 ParseResult Request::parse_first_line_(const std::string &req)
 {
@@ -73,8 +109,12 @@ ParseResult Request::parse_first_line_(const std::string &req)
         return ParseResult::Error;
     }
     method = firstLine.substr(0, tokenEnd); 
-    if(method.size() > MAX_METHOD_SIZE) {
-        logDebug("Invalid method size!");
+    const std::set<std::string> methods{
+        "GET",     "HEAD",    "POST",  "PUT",   "DELETE",
+        "CONNECT", "OPTIONS", "TRACE", "PATCH", "PRI"};
+
+    if (methods.find(method) == methods.end()) {
+        logInfo("Invalid HTTP method!");
         return ParseResult::Error;
     }
     firstLine.erase(0, tokenEnd+1);
@@ -94,8 +134,8 @@ ParseResult Request::parse_first_line_(const std::string &req)
 
     // VERSION
     version = firstLine; 
-    if(version.size() > MAX_VERSION_SIZE) {
-        logDebug("Invalid version size!");
+    if (version != "HTTP/1.1" && version != "HTTP/1.0") {
+        logInfo("Invalid HTTP version!");
         return ParseResult::Error;
     }
     parse_index_ = firstLineEnd+2;
@@ -114,6 +154,7 @@ ParseResult Response::parse_string(const std::string &resp)
                 return res;
             }
             parse_state_ = ParseState::Headers;
+            [[fallthrough]];
         case ParseState::Headers:
             res = parse_headers_(resp, headers, parse_index_);
             if(res == ParseResult::Incomplete) {
@@ -123,6 +164,7 @@ ParseResult Response::parse_string(const std::string &resp)
                 return res;
             }
             parse_state_ = ParseState::Body;
+            [[fallthrough]];
         case ParseState::Body:
             res = parse_body_(resp, headers, body, parse_index_);
             if(res == ParseResult::Incomplete) {
@@ -132,6 +174,7 @@ ParseResult Response::parse_string(const std::string &resp)
                 return res;
             }
             parse_state_ = ParseState::Complete;
+            [[fallthrough]];
         case ParseState::Complete:
             return ParseResult::Complete;
         case ParseState::Error:
@@ -139,6 +182,31 @@ ParseResult Response::parse_string(const std::string &resp)
         default:
             return ParseResult::Error;
     }
+}
+
+std::string Response::serialize() 
+{
+    if (version != "HTTP/1.1" && version != "HTTP/1.0") {
+        logError("Serialize error: Invalid HTTP version!");
+        return "";
+    }
+    if(status_code < 100 || status_code > 999) {
+        logError("Serialize error: Status code is invalid!");
+        return "";
+    }
+    // First line
+    std::string respstr = version + ' ' + std::to_string(status_code) + ' ' + reason + "\r\n";
+    // Headers
+    if(!headers.contains("Content-Length"))
+        headers["Content-Length"] = std::to_string(body.size());
+    for(auto& header : headers) {
+        respstr += header.first + ": " + header.second + "\r\n";
+    }
+    respstr += "\r\n";
+    // Body
+    respstr += body;
+
+    return respstr; 
 }
 ParseResult Response::parse_first_line_(const std::string &resp)
 {
@@ -153,9 +221,9 @@ ParseResult Response::parse_first_line_(const std::string &resp)
         logDebug("Invalid request first line!");
         return ParseResult::Error;
     }
-    version = firstLine.substr(0, tokenEnd); 
-    if(version.size() > MAX_VERSION_SIZE) {
-        logDebug("Invalid version size!");
+    version = firstLine; 
+    if (version != "HTTP/1.1" && version != "HTTP/1.0") {
+        logInfo("Invalid HTTP method!");
         return ParseResult::Error;
     }
     firstLine.erase(0, tokenEnd+1);
@@ -180,7 +248,7 @@ ParseResult Response::parse_first_line_(const std::string &resp)
     firstLine.erase(0, tokenEnd+1);
 
     // REASON
-    version = firstLine; 
+    reason = firstLine; 
     if(version.size() > MAX_REASON_SIZE || version.size() <= 0) {
         logDebug("Invalid reason size!");
         return ParseResult::Error;
@@ -204,7 +272,7 @@ ParseResult parse_headers_(const std::string &data,
     auto headersEnd = data.find("\r\n\r\n");
     if(headersEnd == std::string::npos)
         return ParseResult::Incomplete;
-    std::string headersStr = data.substr(pos, headersEnd);
+    std::string headersStr = data.substr(pos, headersEnd - pos + 4);
     if(headersStr.size() > MAX_HEADERS_SIZE) {
         logDebug("Headers size too large!");
         return ParseResult::Error;
@@ -216,13 +284,15 @@ ParseResult parse_headers_(const std::string &data,
         headersStr.erase(0, token.length()+2);
         if(token.empty()) // found "\r\n\r\n"
             break;
-        auto delimiterPos = token.find(' ');
+        auto delimiterPos = token.find(':');
         if(delimiterPos == std::string::npos) {
             logDebug("Invalid header!");
             return ParseResult::Error;
         }
-        std::string name { token.substr(0,delimiterPos-1) };
-        std::string value { token.substr(delimiterPos+1, token.size()-delimiterPos) };
+        std::string name { token.substr(0,delimiterPos) };
+        std::string value { token.substr(delimiterPos+1) };
+        if(!value.empty() && value[0] == ' ')
+            value.erase(0, 1);
         if(!is_valid_header_name_(name)) {
             logDebug("Invalid header name!");
             return ParseResult::Error;
@@ -242,7 +312,7 @@ ParseResult parse_body_(const std::string &data,
                         std::string &body,
                         int &pos)
 {
-    if(headers["Transfer-Encoding"] == "Chunked") {
+    if(headers["Transfer-Encoding"] == "chunked") {
         logInfo("Unsupported body format!");
         return ParseResult::Error;
     }

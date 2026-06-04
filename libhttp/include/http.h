@@ -5,9 +5,7 @@
 
 namespace libhttp {
 
-const int MAX_METHOD_SIZE = 16;
 const int MAX_PATH_SIZE = 2048;
-const int MAX_VERSION_SIZE = 16;
 const int MAX_REASON_SIZE = 2048;
 const int STATUS_CODE_STR_SIZE = 3;
 const int MAX_HEADERS_SIZE = 8*1024;
@@ -30,9 +28,9 @@ enum class ParseResult {
 };
 
 struct Request {
-	std::string method = std::string(MAX_METHOD_SIZE, 0); // GET
-	std::string path = std::string(MAX_PATH_SIZE, 0);   // /path
-	std::string version = std::string(MAX_VERSION_SIZE, 0); 	// HTTP/1.1
+	std::string method; // GET
+	std::string path;  // /path
+	std::string version; 	// HTTP/1.1
 
 	std::unordered_map<std::string, std::string> headers;
 
@@ -40,6 +38,7 @@ struct Request {
 	std::string body;
 
 	ParseResult parse_string(const std::string &req);
+    std::string serialize();
 
 	bool set_header(const std::string &key, const std::string &val);
 	void set_content(const char *s, size_t n, const std::string &content_type);
@@ -56,9 +55,9 @@ private:
 };
 
 struct Response {
-	std::string version = std::string(MAX_VERSION_SIZE, 0);
-	int status_code = -1;
-	std::string reason = std::string(MAX_REASON_SIZE, 0);
+	std::string version;
+	int status_code;
+	std::string reason;
 
 	std::unordered_map<std::string, std::string> headers;
 
@@ -75,6 +74,7 @@ struct Response {
   	void set_file_content(const std::string &path);
 	
 	ParseResult parse_string(const std::string &resp);
+    std::string serialize();
 private:
 	int parse_index_ = 0;
     ParseState parse_state_ = ParseState::StartLine;
