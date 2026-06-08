@@ -4,7 +4,6 @@
 
 #include <cstring>
 #include <regex>
-#include <sys/socket.h>
 #include <networkfuncs.h>
 
 using namespace libhttp;
@@ -33,18 +32,18 @@ Client::Client(std::string url)
 	}
 	int portNum = std::stoi(port);
 
-    create_client(hostname, portNum);
+    create_client_(hostname, portNum);
 }
 Client::Client(std::string host, int port)
 {
-	create_client(host, port);	
+	create_client_(host, port);	
 }
 Client::~Client() 
 {
 	if(sockfd != -1) 
 		close(sockfd);
 }
-bool Client::create_client(const std::string &host, int port)
+bool Client::create_client_(const std::string &host, int port)
 {
 	addrinfo hints;
     memset(&hints, 0, sizeof hints);
@@ -89,18 +88,91 @@ bool Client::create_client(const std::string &host, int port)
     freeaddrinfo(hostinfo);
 	return 0;
 }
-std::string Client::receive()
+std::optional<Response> Client::receive_response_()
 {
+    std::string data;
+	char buf[MAX_DATA_PAYLOAD];
 	if(sockfd == -1) {
         logError("Bad socket for receive!");
-		return "";
+		return {};
 	}
-	std::string msg(MAXDATASIZE, 0);
-	int nbytes = recv(sockfd, msg.data(), MAXDATASIZE, 0);
 
-	return msg;
+    Response resp;
+    ssize_t offset = 0;
+    for(;;) {
+        ssize_t nbytes = recv(sockfd, buf+offset, MAX_DATA_PAYLOAD-offset, 0);
+        if(nbytes == 0) {
+            if(resp.parse_string(data) == ParseResult::Complete)
+                return resp;
+            else 
+                return std::nullopt;
+        }
+        if(nbytes < 0) {
+           logError(std::string("recv() error ") + strerror(errno));
+            return std::nullopt;
+        }
+        offset += nbytes;
+        data.append(buf+offset, nbytes);
+
+        auto result = resp.parse_string(data);
+        switch(result) {
+            case ParseResult::Complete:
+                logInfo("Got response from " + get_ip_string(sockfd)); 
+                return resp; 
+            case ParseResult::Incomplete:
+                logInfo("Message from " + get_ip_string(sockfd) + " is not finished. Waiting for completion.");
+                break;
+            case ParseResult::Error:
+                logInfo("Bad response from " + get_ip_string(sockfd));
+                return std::nullopt;
+        }
+    }
 }
-Response Client::Get(std::string path) 
-{	
+std::optional<Response> Client::GetImpl_(const std::string& path, const Headers& headers, const std::string& body)
+{
 	Request req;
+
+    req.version = "HTTP/1.1";
+    req.path = path;
+    req.method = "GET";
+    req.headers = headers;
+    req.body = body;
+    if(!req.body.empty())
+        req.headers["Content-Length"] = std::to_string(body.length());
+
+    if(!send_(sockfd, req.serialize())) { 
+        logError("Could not send request!");
+        return std::nullopt;
+    }
+    return receive_response_();
+}
+std::optional<Response> Client::Get(const std::string& path) 
+{
+    return GetImpl_(path, {}, "");
+}
+std::optional<Response> Client::Get(const std::string& path, const Headers& headers)
+{
+    return GetImpl_(path, headers, "");
+}
+bool Client::send_(int sockfd, const std::string &str)
+{
+	if(sockfd < 0) {
+        logError("Bad socket for send!");
+		return 1;
+	}
+	int strsize = str.length();
+
+    size_t total = 0;
+    while(total < str.size()) {
+        ssize_t n = ::send(sockfd,
+                           str.data() + total,
+                           str.size() - total,
+                           0);
+        if(n < 0) {
+            logDebug(std::string("send() error: ") + std::strerror(errno));
+            return false;
+        }
+        total += n;
+    }
+    return true;
 }

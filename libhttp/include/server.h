@@ -58,7 +58,7 @@ struct Connection {
 
     Request request;
 
-    bool keep_alive = false;
+    //bool keep_alive = false;
 };
 
 class Server
@@ -109,6 +109,7 @@ private:
 	void handle_client_data_(int pollfd_index);
 	void handle_request_(Connection&);
     Handlers& choose_handlers_(std::string& method);
+    Response make_error_response(StatusCode code);
     void handle_bad_request_(Connection&);
 	bool send_(int client_fd, const std::string&);
     void close_connection(int client_fd);

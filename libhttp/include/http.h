@@ -26,13 +26,13 @@ enum class ParseResult {
     Incomplete,
     Complete,
 };
-
+using Headers = std::unordered_map<std::string, std::string>;
 struct Request {
 	std::string method; // GET
 	std::string path;  // /path
 	std::string version; 	// HTTP/1.1
 
-	std::unordered_map<std::string, std::string> headers;
+	Headers headers;
 
 	size_t content_length;
 	std::string body;
@@ -59,7 +59,7 @@ struct Response {
 	int status_code;
 	std::string reason;
 
-	std::unordered_map<std::string, std::string> headers;
+	Headers headers;
 
 	size_t content_length;
 	std::string body;

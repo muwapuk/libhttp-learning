@@ -146,12 +146,11 @@ void Server::handle_client_data_(int pollfd_index)
 	int nbytes = recv(client_fd, buf, sizeof buf, 0); 
 
 	if(nbytes <= 0) {
-		if(nbytes == 0) {
-            logInfo("Pending to close connection with " + connections_[client_fd].ip_str);
-            logDebug(std::string("client_fd = ") + std::to_string(client_fd));
-		} else {
+		if(nbytes < 0) {
             logDebug(std::string("recv: ") + std::strerror(errno));
 		}
+        logInfo("Pending to close connection with " + connections_[client_fd].ip_str);
+        logDebug(std::string("client_fd = ") + std::to_string(client_fd));
         pending_closes_.insert(client_fd);
 	} else {
         connections_[client_fd].read_buffer.append(buf, nbytes);
@@ -221,12 +220,7 @@ void Server::handle_request_(Connection& con) {
                 + con.ip_str 
                 + ": " 
                 + con.request.path);
-        resp.version = "HTTP/1.1";
-        resp.status_code = NotFound_404;
-        resp.reason = status_messages(NotFound_404);
-        resp.body = "<h1>404 Not Found</h1>";
-        resp.headers["Content-Length"] = std::to_string(resp.body.size());
-        resp.headers["Connection"] = "close";
+        make_error_response(NotFound_404);
 	} else {
         auto handler = choose_handlers_(con.request.method)[con.request.path];
         handler(con.request, resp);
@@ -262,13 +256,7 @@ void Server::handle_bad_request_(Connection& con)
     if(error_handlers_.contains(BadRequest_400)) {
         error_handlers_[BadRequest_400](con.request, resp);
     } else {
-        logInfo("Bad request from " 
-                + con.ip_str);
-        resp.version = "HTTP/1.1";
-        resp.status_code = BadRequest_400;
-        resp.reason = status_messages(BadRequest_400);
-        resp.body = "<h1>400 Not Found</h1>";
-        resp.headers["Connection"] = "close";
+        make_error_response(BadRequest_400);
     }
     std::string response_string { resp.serialize() };
     if(response_string.empty()) { 
@@ -281,6 +269,18 @@ void Server::handle_bad_request_(Connection& con)
 
     logInfo("Pending to close connection with " + con.ip_str);
     pending_closes_.insert(con.client_fd);
+}
+
+Response Server::make_error_response(StatusCode code)
+{
+    Response resp;
+    resp.version = "HTTP/1.1";
+    resp.status_code = code;
+    resp.reason = status_messages(code);
+    resp.body = "<h1>" + std::to_string(code) + ' ' + resp.reason + "</h1>";
+    resp.headers["Connection"] = "close";
+
+    return resp;
 }
 void Server::close_connection(int client_fd)
 {
